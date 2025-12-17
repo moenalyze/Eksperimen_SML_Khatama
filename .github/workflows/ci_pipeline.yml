@@ -1,4 +1,4 @@
-name: CI Pipeline & Docker Push
+name: CI Pipeline (Production)
 
 on:
   push:
@@ -11,52 +11,70 @@ env:
   DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
   DOCKER_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
   MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/Eksperimen_SML_Khatama.mlflow
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
 
-      - name: Install Dependencies
+      - name: Check Env
         run: |
-          pip install mlflow==2.19.0 dagshub pandas scikit-learn matplotlib seaborn
+          echo "Checking Environment Variables..."
+          python --version
+          pip --version
+          echo "MLFLOW URI: $MLFLOW_TRACKING_URI"
 
-      - name: Train Model & Log to DagsHub
+      - name: Install dependencies
+        run: |
+          pip install mlflow==2.19.0 dagshub pandas scikit-learn matplotlib seaborn virtualenv
+
+      - name: Run mlflow project
         working-directory: Workflow-CI/MLProject
         run: |
           python modelling.py
 
-      - name: Get Latest Run ID
+      - name: Get latest MLflow run_id
         id: get_run_id
         run: |
-          # Ambil Run ID terakhir dari eksperimen "Water_Quality_Basic"
+          # Mengambil Run ID terakhir dari DagsHub
           RUN_ID=$(python -c "import mlflow; mlflow.set_tracking_uri('${{ env.MLFLOW_TRACKING_URI }}'); print(mlflow.search_runs(experiment_names=['Water_Quality_Basic'], order_by=['start_time DESC'], max_results=1).iloc[0].run_id)")
           echo "Run ID Found: $RUN_ID"
           echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
 
-      - name: Build Docker Image using MLflow
+      - name: Download Model & Upload to GitHub Artifacts
         run: |
-          IMAGE_TAG="${{ secrets.DOCKER_HUB_USERNAME }}/water-quality-model:latest"
-          
-          echo "Building Docker Image: $IMAGE_TAG from Run ID: ${{ steps.get_run_id.outputs.run_id }}"
-          
+          mlflow artifacts download --run-id ${{ steps.get_run_id.outputs.run_id }} --artifact-path model --dst-path ./downloaded_model
+        
+      - name: Upload to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: ./downloaded_model
+
+      - name: Build Docker Model
+        run: |
           mlflow models build-docker \
             --model-uri "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
-            --name "$IMAGE_TAG"
+            --name "water-quality-local:latest"
 
-      - name: Login to Docker Hub
+      - name: Log in to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Tag Docker Image
+        run: |
+          docker tag water-quality-local:latest ${{ secrets.DOCKER_HUB_USERNAME }}/water-quality-model:latest
 
       - name: Push Docker Image
         run: |
