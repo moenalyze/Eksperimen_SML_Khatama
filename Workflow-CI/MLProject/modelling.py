@@ -18,7 +18,7 @@ def train_basic():
 
     dagshub.init(repo_owner=DAGSHUB_USERNAME, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
     mlflow.set_tracking_uri(f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO_NAME}.mlflow")
-    mlflow.set_experiment("Water_Quality_Basic")
+    # mlflow.set_experiment("Water_Quality_Basic")
     
     file_name = 'water_potability_processed.csv'
 
