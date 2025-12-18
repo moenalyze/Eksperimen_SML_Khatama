@@ -1,51 +1,33 @@
 import pandas as pd
-import mlflow
-import dagshub
-import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
+import mlflow
 
-DAGSHUB_USERNAME = "moenalyze"
-DAGSHUB_REPO_NAME = "Eksperimen_SML_Khatama"
+mlflow.set_tracking_uri("http://localhost:5000")
+mlflow.set_experiment("Water_Quality_Experiment_Local")
 
-def train_basic():
-    print("Memulai Training (Autolog)...")
+df = pd.read_csv('water_potability_processed.csv')
 
-    dagshub.init(repo_owner=DAGSHUB_USERNAME, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
-    mlflow.set_tracking_uri(f"https://dagshub.com/{DAGSHUB_USERNAME}/{DAGSHUB_REPO_NAME}.mlflow")
-    mlflow.set_experiment("Water_Quality_Basic")
+X = df.drop('Potability', axis=1)
+y = df['Potability']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+
+mlflow.autolog()
+
+with mlflow.start_run(run_name="Random_Forest_Local_Model"):
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
     
-    file_name = 'water_potability_processed.csv'
-
-    if os.path.exists(os.path.join('Membangun_model', file_name)):
-        data_path = os.path.join('Membangun_model', file_name)
-    elif os.path.exists(file_name):
-        data_path = file_name
-    else:
-        data_path = os.path.join('data', file_name)
-        
-    print(f"Membaca dataset dari: {data_path}")
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
     
-    try:
-        df = pd.read_csv(data_path)
-    except FileNotFoundError:
-        print(f"Error: File {file_name} tidak ditemukan di mana-mana!")
-        return
-    
-    X = df.drop('Potability', axis=1)
-    y = df['Potability']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    mlflow.autolog()
-
-    with mlflow.start_run(run_name="Basic_RandomForest"):
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-
-        y_pred = model.predict(X_test)
-        acc = accuracy_score(y_test, y_pred)
-        print(f"Training Selesai. Akurasi: {acc}")
-
-if __name__ == "__main__":
-    train_basic()
+    print(f"Accuracy: {accuracy}")
